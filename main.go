@@ -1,9 +1,14 @@
 package main
 
 import (
+	"PNG-unroller/png"
 	"fmt"
 	"os"
 )
+
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
+}
 
 func checkForArgs(args []string) *os.File {
 	fmt.Println("==PNG UNROLLER==")
@@ -36,5 +41,15 @@ func checkForArgs(args []string) *os.File {
 
 func main() {
 	image := checkForArgs(os.Args)
+
+	//image valid, so unroll
+	if image != nil {
+		if png.CheckFileSignature(image) {
+			//DO PNG MANIPULATION HERE
+		}
+	} else {
+		os.Exit(0)
+	}
+
 	image.Close()
 }
