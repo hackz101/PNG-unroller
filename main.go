@@ -41,15 +41,20 @@ func checkForArgs(args []string) *os.File {
 
 func main() {
 	image := checkForArgs(os.Args)
+	defer image.Close()
 
 	//image valid, so unroll
 	if image != nil {
 		if png.CheckFileSignature(image) {
-			//DO PNG MANIPULATION HERE
+			//it is a PNG
+			png.ReadAllChunks(image)
+		} else {
+			//the file signature is invalid
+			os.Exit(0)
 		}
 	} else {
+		//the image is invalid
 		os.Exit(0)
 	}
 
-	image.Close()
 }
