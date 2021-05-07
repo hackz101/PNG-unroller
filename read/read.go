@@ -12,6 +12,7 @@ type Bitstream struct {
 	bitI        uint8
 	bitV        byte
 	data        *[]byte
+	length      uint32
 }
 
 func ReadByte(file *os.File) byte {
@@ -43,8 +44,12 @@ func ReadLengthOfBytes(file *os.File, length uint32) []byte {
 	return temp
 }
 
-func readBit(b byte, pos uint8) byte {
+func ReadBit(b byte, pos uint8) byte {
 	return ((b >> pos) & byte(1))
+}
+
+func ReadBits(b byte, start uint8, end uint8) byte {
+	return (b << (7 - end)) >> (7 - (end - start))
 }
 
 func OpenBitstream(data *[]byte) Bitstream {
@@ -53,17 +58,18 @@ func OpenBitstream(data *[]byte) Bitstream {
 	temp.currentbyte = (*temp.data)[0]
 	temp.byteI = 0
 	temp.bitI = 0
-	temp.bitV = readBit(temp.currentbyte, temp.bitI)
+	temp.bitV = ReadBit(temp.currentbyte, temp.bitI)
+	temp.length = uint32(len(*data))
 	return temp
 }
 
 func ReadByteBitstream(stream *Bitstream) byte {
 	var temp byte
-	if stream.byteI < uint32(len(*stream.data)-1) {
+	if stream.byteI < uint32((*stream).length-1) {
 		temp = stream.currentbyte
 		stream.byteI++
 		stream.currentbyte = (*stream.data)[stream.byteI]
-	} else if stream.byteI == uint32(len(*stream.data)-1) {
+	} else if stream.byteI == uint32((*stream).length-1) {
 		temp = stream.currentbyte
 	}
 	return temp
@@ -71,7 +77,7 @@ func ReadByteBitstream(stream *Bitstream) byte {
 
 func ReadUint8Bitstream(stream *Bitstream) byte {
 	var temp byte
-	if stream.byteI < uint32(len(*stream.data)-1) {
+	if stream.byteI < uint32((*stream).length-1) {
 		temp = stream.currentbyte
 		stream.byteI++
 		stream.currentbyte = (*stream.data)[stream.byteI]
@@ -83,18 +89,22 @@ func ReadUint8Bitstream(stream *Bitstream) byte {
 
 func ReadUint32Bitstream(stream *Bitstream) uint32 {
 	var temp uint32
-	if stream.byteI <= uint32(len(*stream.data)-4) {
+	if stream.byteI <= uint32((*stream).length-4) {
 		temp |= uint32((*stream.data)[stream.byteI]) << 24
 		temp |= uint32((*stream.data)[stream.byteI+1]) << 16
 		temp |= uint32((*stream.data)[stream.byteI+2]) << 8
 		temp |= uint32((*stream.data)[stream.byteI+3])
 		stream.byteI += 4
 		stream.currentbyte = (*stream.data)[stream.byteI]
-	} else if stream.byteI == uint32(len(*stream.data)-4) {
+	} else if stream.byteI == uint32((*stream).length-4) {
 		temp |= uint32((*stream.data)[stream.byteI]) << 24
 		temp |= uint32((*stream.data)[stream.byteI+1]) << 16
 		temp |= uint32((*stream.data)[stream.byteI+2]) << 8
 		temp |= uint32((*stream.data)[stream.byteI+3])
 	}
 	return temp
+}
+
+func ReadRemainingBytesInPlace(stream *Bitstream) []byte {
+	return (*stream.data)[(*&stream.byteI):]
 }

@@ -25,6 +25,23 @@ type IHDR struct {
 	interlacemethod   uint8
 }
 
+type IDAT struct {
+	typecode []byte
+	zlib     *Zlib
+}
+
+type Zlib struct {
+	compressionmethod uint8
+	cm                uint8
+	cinfo             uint8
+	additionalflags   uint8
+	fcheck            uint8
+	fdict             uint8
+	flevel            uint8
+	data              []byte
+	checkvalue        []byte
+}
+
 func CheckFileSignature(file *os.File) bool {
 	fmt.Println("Checking File Signature")
 	pngsignature := []byte{byte(137), byte(80), byte(78), byte(71), byte(13), byte(10), byte(26), byte(10)}
@@ -93,7 +110,7 @@ func ColorTypeBitDepthCheck(color uint8, bit uint8) bool {
 	return true
 }
 
-func ProccessChunk(chunk Chunk) {
+func ProccessChunk(chunk Chunk, zlibblock *Zlib, idatnum *int) {
 	//check chunk type
 	typecode := StringifyType(chunk.typecode)
 	if typecode == "IHDR" {
@@ -106,7 +123,12 @@ func ProccessChunk(chunk Chunk) {
 		fmt.Println("\tFilter method: " + fmt.Sprint(ihdr.filtermethod))
 		fmt.Println("\tInterlace method: " + fmt.Sprint(ihdr.interlacemethod))
 	} else if typecode == "IDAT" {
-
+		ProcessIDAT(chunk, zlibblock, idatnum)
+	} else if typecode == "IEND" {
+		//we can pop off the Adler32 from end of Zlib stream here
+		(*zlibblock).checkvalue = append((*zlibblock).checkvalue, (*zlibblock).data[(len((*zlibblock).data)-4):]...)
+		(*zlibblock).data = (*zlibblock).data[:(len((*zlibblock).data) - 4)]
+		//now we need to pack up all of this data and send it through to the main function
 	} else {
 		fmt.Println("Sorry haven't implemented this chunk processing yet!")
 	}
@@ -160,8 +182,50 @@ func ProcessIHDR(chunk Chunk) IHDR {
 	return ihdr
 }
 
+func ProcessIDAT(chunk Chunk, zlibblock *Zlib, idatnum *int) {
+	idatdata := read.OpenBitstream(&chunk.data)
+	//if first IDAT block, it includes zlib headers
+	if *idatnum == 0 {
+		(*idatnum)++
+		//do zlib header processing
+		(*zlibblock).compressionmethod = read.ReadUint8Bitstream(&idatdata)
+		(*zlibblock).cm = read.ReadBits((*zlibblock).compressionmethod, 0, 3)
+		//compression type checking
+		if (*zlibblock).cm != 8 {
+			fmt.Println("Zlib compression method not supported")
+			os.Exit(0)
+		}
+		fmt.Println("\tCM: " + fmt.Sprint((*zlibblock).cm))
+		(*zlibblock).cinfo = read.ReadBits((*zlibblock).compressionmethod, 4, 7)
+		//cinfo value check
+		if (*zlibblock).cinfo > 7 {
+			fmt.Println("CINFO value too large")
+			os.Exit(0)
+		}
+		fmt.Println("\tCINFO: " + fmt.Sprint((*zlibblock).cinfo))
+		(*zlibblock).additionalflags = read.ReadUint8Bitstream(&idatdata)
+		(*zlibblock).fcheck = read.ReadBits((*zlibblock).additionalflags, 0, 4)
+		//check value against cmf and flag
+		if (uint16((*zlibblock).compressionmethod)*256+uint16((*zlibblock).additionalflags))%31 != 0 {
+			fmt.Println("Flag Check Failed")
+			os.Exit(0)
+		}
+		fmt.Println("\tFCHECK: " + fmt.Sprint((*zlibblock).fcheck))
+		(*zlibblock).fdict = read.ReadBit((*zlibblock).additionalflags, 5)
+		fmt.Println("\tFDICT: " + fmt.Sprint((*zlibblock).fdict))
+		(*zlibblock).flevel = read.ReadBits((*zlibblock).additionalflags, 6, 7)
+		fmt.Println("\tFLEVEL: " + fmt.Sprint((*zlibblock).flevel))
+		//read remaining bytes in as compressed data
+		(*zlibblock).data = read.ReadRemainingBytesInPlace(&idatdata)
+	} else {
+		(*zlibblock).data = append((*zlibblock).data, (read.ReadRemainingBytesInPlace(&idatdata))...)
+	}
+}
+
 func ReadAllChunks(file *os.File) {
 	chunknum := 0 //used to check first chunk
+	idatnum := 0  //used to check if first idat
+	var zlibblock Zlib
 
 	//go through all chunks
 	chunktype := ""
@@ -175,9 +239,8 @@ func ReadAllChunks(file *os.File) {
 			fmt.Println("Misformatted png file.")
 			os.Exit(0)
 		}
-		fmt.Println("Reading " + chunktype + "...")
 
-		//do chunk data manipulation here
-		ProccessChunk(chunk)
+		fmt.Println("Reading " + chunktype + "...")
+		ProccessChunk(chunk, &zlibblock, &idatnum)
 	}
 }
