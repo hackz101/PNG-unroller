@@ -15,6 +15,16 @@ type Chunk struct {
 	crc      []byte
 }
 
+type IHDR struct {
+	width             uint32
+	height            uint32
+	bitdepth          uint8
+	colortype         uint8
+	compressionmethod uint8
+	filtermethod      uint8
+	interlacemethod   uint8
+}
+
 func CheckFileSignature(file *os.File) bool {
 	fmt.Println("Checking File Signature")
 	pngsignature := []byte{byte(137), byte(80), byte(78), byte(71), byte(13), byte(10), byte(26), byte(10)}
@@ -29,7 +39,7 @@ func CheckFileSignature(file *os.File) bool {
 
 func StringifyType(typecode []byte) string {
 	//returns chunk type as string
-	//originally string type is not used because png formats specifies not to
+	//originally string type is not used because png format specifies not to
 	return string(typecode)
 }
 
@@ -58,14 +68,54 @@ func ReadChunk(file *os.File) Chunk {
 	return chunk
 }
 
+func ProccessChunk(chunk Chunk) {
+	//check chunk type
+	typecode := StringifyType(chunk.typecode)
+	if typecode == "IHDR" {
+		ihdr := ProcessIHDR(chunk)
+		fmt.Println("\tWidth: " + fmt.Sprint(ihdr.width))
+		fmt.Println("\tHeight: " + fmt.Sprint(ihdr.height))
+		fmt.Println("\tBit depth: " + fmt.Sprint(ihdr.bitdepth))
+		fmt.Println("\tColor type: " + fmt.Sprint(ihdr.colortype))
+		fmt.Println("\tCompression method: " + fmt.Sprint(ihdr.compressionmethod))
+		fmt.Println("\tFilter method: " + fmt.Sprint(ihdr.filtermethod))
+		fmt.Println("\tInterlace method: " + fmt.Sprint(ihdr.interlacemethod))
+	} else {
+		fmt.Println("Sorry haven't implemented this chunk processing yet!")
+	}
+}
+
+func ProcessIHDR(chunk Chunk) IHDR {
+	data := read.OpenBitstream(&chunk.data)
+	var ihdr IHDR
+	ihdr.width = read.ReadUint32Bitstream(&data)
+	ihdr.height = read.ReadUint32Bitstream(&data)
+	ihdr.bitdepth = read.ReadUint8Bitstream(&data)
+	ihdr.colortype = read.ReadUint8Bitstream(&data)
+	ihdr.compressionmethod = read.ReadUint8Bitstream(&data)
+	ihdr.filtermethod = read.ReadUint8Bitstream(&data)
+	ihdr.interlacemethod = read.ReadUint8Bitstream(&data)
+	return ihdr
+}
+
 func ReadAllChunks(file *os.File) {
+	chunknum := 0 //used to check first chunk
+
 	//go through all chunks
 	chunktype := ""
 	for chunktype != "IEND" {
+		chunknum++
 		//read next chunk
 		chunk := ReadChunk(file)
 		chunktype = StringifyType(chunk.typecode)
-		fmt.Println(chunktype)
+		//make sure IHDR is first chunk
+		if chunknum == 1 && chunktype != "IHDR" {
+			fmt.Println("Misformatted png file.")
+			os.Exit(0)
+		}
+		fmt.Println("Reading " + chunktype + "...")
 
+		//do chunk data manipulation here
+		ProccessChunk(chunk)
 	}
 }
